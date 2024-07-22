@@ -189,13 +189,10 @@ pub fn Page(rel: type) type {
         }
 
         pub fn upsert(self: *Self, kv: *const rel.Type) bool {
-            // std.debug.print("UPSERT {any}\n", .{kv});
             const pos = self.binarySearch(rel.key(kv));
-            // std.debug.print("SEARCH {any}\n", .{pos});
             if (pos >= 0) {
                 const ip: usize = @intCast(pos);
                 self.records[ip] = kv.*;
-                std.debug.print("UPDATE {any}\n", .{ip});
                 return true;
             } else {
                 const ip: usize = @intCast(-pos - 1);
@@ -205,7 +202,6 @@ pub fn Page(rel: type) type {
                     self.records[copy] = self.records[copy - 1];
                 }
                 self.records[ip] = kv.*;
-                std.debug.print("INSERT {any}\n", .{ip});
                 self.header.len += 1;
                 return false;
             }

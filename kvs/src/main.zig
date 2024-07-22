@@ -27,7 +27,7 @@ pub fn main() !void {
 
     //
 
-    const n = 10000;
+    const n = 1000000;
     var timer = try std.time.Timer.start();
     for (0..n) |_| {
         const record = &S1{
@@ -36,11 +36,9 @@ pub fn main() !void {
             .cx = random.int(i16),
             .dx = random.int(i8),
         };
-        const result = page.upsert(record);
-        std.debug.print("{any} {any}\n", .{ record, result });
+        _ = page.upsert(record);
     }
     const elapsed_ns = timer.read();
     const elapsed_s = @as(f64, @floatFromInt(elapsed_ns)) / std.time.ns_per_s;
     try stdout.print("inserted {} records in {:.6} seconds\n", .{ n, elapsed_s });
-    std.debug.print("{any}\n", .{page});
 }
