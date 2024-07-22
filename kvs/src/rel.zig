@@ -43,7 +43,7 @@ pub fn Rel(comptime T: type, PK: type) type {
         const KeyType = K;
         const PrimaryKey = PK;
 
-        fn key(record: *const Type) KeyType {
+        pub fn key(record: *const Type) KeyType {
             var result: KeyType = undefined;
             inline for (keyinfo.fields, 0..) |field, i| {
                 result[i] = @field(record, field.name);
@@ -59,7 +59,7 @@ pub fn Rel(comptime T: type, PK: type) type {
         //     return Cmp.eq;
         // }
 
-        fn compareKey(k: KeyType, record: *const Type) Cmp {
+        pub fn compareKey(k: KeyType, record: *const Type) Cmp {
             inline for (keyinfo.fields, 0..) |field, i| {
                 if (k[i] < @field(record, field.name)) return Cmp.le;
                 if (k[i] > @field(record, field.name)) return Cmp.gt;
@@ -130,15 +130,45 @@ pub fn Page(rel: type) type {
             allocator.free(self);
         }
 
-        fn binarySearch(self: *Self, key: rel.KeyType) isize {
-            var low: isize = 0;
-            var high: isize = @as(isize, @intCast(self.header.len)) - 1;
-            while (low <= high) {
-                const mid = @divTrunc(low + high, 2);
-                const cmp = rel.compareKey(key, &self.records[@intCast(mid)]);
-                if (cmp == Cmp.gt) low = mid + 1 else if (cmp == Cmp.le) high = mid - 1 else return mid;
+        // fn binarySearch(self: *Self, key: rel.KeyType) isize {
+        //     var low: isize = 0;
+        //     var high: isize = @as(isize, @intCast(self.header.len)) - 1;
+        //     while (low <= high) {
+        //         const mid = @divTrunc(low + high, 2);
+        //         const record = &self.records[@intCast(mid)];
+        //         const cmp = rel.compareKey(key, record);
+        //         if (cmp == Cmp.gt) {
+        //             low = mid + 1;
+        //         } else if (cmp == Cmp.le) {
+        //             high = mid - 1;
+        //         } else return mid;
+        //     }
+        //     return -low - 1;
+        // }
+
+        fn lowerBound(self: *Self, key: rel.KeyType) usize {
+            var low: usize = 0;
+            var high: usize = self.header.len;
+            while (low < high) {
+                const mid = (low + high) >> 1;
+                const record = &self.records[mid];
+                const cmp = rel.compareKey(key, record);
+                if (cmp == Cmp.gt) {
+                    low = mid + 1;
+                } else high = mid;
             }
-            return -low - 1;
+            return low;
+        }
+
+        fn binarySearch(self: *Self, key: rel.KeyType) isize {
+            const ip = self.lowerBound(key);
+            if (ip < self.header.len) {
+                const record = &self.records[ip];
+                if (rel.compareKey(key, record) == Cmp.eq) {
+                    return @intCast(ip);
+                }
+            }
+            return -@as(isize, @intCast(ip)) - 1;
         }
 
         pub fn seek(self: *Self, key: rel.KeyType) Cursor {
@@ -159,17 +189,23 @@ pub fn Page(rel: type) type {
         }
 
         pub fn upsert(self: *Self, kv: *const rel.Type) bool {
+            // std.debug.print("UPSERT {any}\n", .{kv});
             const pos = self.binarySearch(rel.key(kv));
+            // std.debug.print("SEARCH {any}\n", .{pos});
             if (pos >= 0) {
-                self.records[@intCast(pos)] = kv.*;
+                const ip: usize = @intCast(pos);
+                self.records[ip] = kv.*;
+                std.debug.print("UPDATE {any}\n", .{ip});
                 return true;
             } else {
                 const ip: usize = @intCast(-pos - 1);
                 const len = self.header.len;
-                for (self.records[ip + 1 .. len + 1], self.records[ip..len]) |*to, *from| {
-                    to.* = from.*;
+                var copy = len;
+                while (copy > ip) : (copy -= 1) {
+                    self.records[copy] = self.records[copy - 1];
                 }
-                self.records[len] = kv.*;
+                self.records[ip] = kv.*;
+                std.debug.print("INSERT {any}\n", .{ip});
                 self.header.len += 1;
                 return false;
             }

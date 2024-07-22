@@ -1,24 +1,46 @@
 const std = @import("std");
+const rel = @import("rel.zig");
+const uuid = @import("uuid.zig");
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    const stdout = std.io.getStdOut().writer();
 
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("memory leak");
+    const allocator = gpa.allocator();
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+    var prng = std.Random.DefaultPrng.init(0);
+    const random = prng.random();
 
-    try bw.flush(); // don't forget to flush!
-}
+    //
 
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
+    const S1 = struct { ax: u32, bx: i16, cx: i16, dx: i8 };
+    const R1 = rel.Rel(S1, enum { ax, bx });
+
+    const R1Page = rel.Page(R1);
+
+    const pages = try allocator.alloc(R1Page, 1);
+    defer allocator.free(pages);
+
+    const page = &pages[0];
+    page.init(uuid.v4());
+
+    //
+
+    const n = 10000;
+    var timer = try std.time.Timer.start();
+    for (0..n) |_| {
+        const record = &S1{
+            .ax = random.uintLessThan(u32, 16),
+            .bx = random.intRangeAtMost(i16, -8, 8),
+            .cx = random.int(i16),
+            .dx = random.int(i8),
+        };
+        const result = page.upsert(record);
+        std.debug.print("{any} {any}\n", .{ record, result });
+    }
+    const elapsed_ns = timer.read();
+    const elapsed_s = @as(f64, @floatFromInt(elapsed_ns)) / std.time.ns_per_s;
+    try stdout.print("inserted {} records in {:.6} seconds\n", .{ n, elapsed_s });
+    std.debug.print("{any}\n", .{page});
 }
