@@ -51,10 +51,18 @@ pub fn Rel(comptime T: type, PK: type) type {
             return result;
         }
 
-        fn compare(a: KeyType, b: KeyType) Cmp {
-            inline for (0..keys) |i| {
-                if (a[i] < b[i]) return Cmp.le;
-                if (a[i] > b[i]) return Cmp.gt;
+        // fn compare(a: KeyType, b: KeyType) Cmp {
+        //     inline for (0..keys) |i| {
+        //         if (a[i] < b[i]) return Cmp.le;
+        //         if (a[i] > b[i]) return Cmp.gt;
+        //     }
+        //     return Cmp.eq;
+        // }
+
+        fn compareKey(k: KeyType, record: *const Type) Cmp {
+            inline for (keyinfo.fields, 0..) |field, i| {
+                if (k[i] < @field(record, field.name)) return Cmp.le;
+                if (k[i] > @field(record, field.name)) return Cmp.gt;
             }
             return Cmp.eq;
         }
@@ -89,7 +97,6 @@ pub fn Page(rel: type) type {
     const RecordsArea = PageSize - @sizeOf(Header);
     const Records = RecordsArea / RecordSize;
     const Alignment = RecordsArea % RecordSize;
-    const comparator = Comparator(rel, rel);
 
     return struct {
         header: Header,
@@ -97,6 +104,20 @@ pub fn Page(rel: type) type {
         alignment: [Alignment]u8,
 
         const Self = @This();
+
+        const Cursor = struct {
+            records: *[Records]rel.Type,
+            pos: usize,
+
+            fn next(self: Cursor) ?*rel.Type {
+                if (self.pos < self.records.len) {
+                    const result = &self.records[self.pos];
+                    self.pos += 1;
+                    return result;
+                }
+                return null;
+            }
+        };
 
         pub fn init(self: *Self, underlying: Uuid) void {
             self.header.len = 0;
@@ -109,19 +130,28 @@ pub fn Page(rel: type) type {
             allocator.free(self);
         }
 
-        fn binarySearch(self: *Self, key: *const rel.Type) isize {
+        fn binarySearch(self: *Self, key: rel.KeyType) isize {
             var low: isize = 0;
             var high: isize = @as(isize, @intCast(self.header.len)) - 1;
             while (low <= high) {
                 const mid = @divTrunc(low + high, 2);
-                const cmp = comparator.compare(key, &self.records[@intCast(mid)]);
+                const cmp = rel.compareKey(key, &self.records[@intCast(mid)]);
                 if (cmp == Cmp.gt) low = mid + 1 else if (cmp == Cmp.le) high = mid - 1 else return mid;
             }
             return -low - 1;
         }
 
+        pub fn seek(self: *Self, key: rel.KeyType) Cursor {
+            const ip = self.binarySearch(key);
+            const cursor = Cursor{
+                .records = &self.records,
+                .pos = if (ip < 0) @intCast(-ip - 1) else @intCast(ip),
+            };
+            return cursor;
+        }
+
         pub fn insert(self: *Self, kv: *const rel.Type) bool {
-            const pos = self.binarySearch(kv);
+            const pos = self.binarySearch(rel.key(kv));
             if (pos >= 0) {
                 return false;
             } else {
