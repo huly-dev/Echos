@@ -150,10 +150,11 @@ pub fn Page(rel: type) type {
             return cursor;
         }
 
-        pub fn insert(self: *Self, kv: *const rel.Type) bool {
+        pub fn upsert(self: *Self, kv: *const rel.Type) bool {
             const pos = self.binarySearch(rel.key(kv));
             if (pos >= 0) {
-                return false;
+                self.records[@intCast(pos)] = kv.*;
+                return true;
             } else {
                 const ip: usize = @intCast(-pos - 1);
                 const len = self.header.len;
@@ -162,7 +163,7 @@ pub fn Page(rel: type) type {
                 }
                 self.records[len] = kv.*;
                 self.header.len += 1;
-                return true;
+                return false;
             }
         }
     };
