@@ -7,8 +7,78 @@ const uuid = @import("./uuid.zig");
 const Uuid = uuid.Uuid;
 
 const StructField = std.builtin.Type.StructField;
+const EnumField = std.builtin.Type.EnumField;
 
 pub const Cmp = enum { eq, gt, le };
+
+fn makeComparator(comptime A: type) type {
+    switch (@typeInfo(A)) {
+        .Struct => {
+            return struct {
+                fn cmp(_: A, _: A) Cmp {
+                    return Cmp.eq;
+                }
+            };
+        },
+        .Array => {
+            return struct {
+                fn cmp(a: A, b: A) Cmp {
+                    for (a, 0..) |elem, i| {
+                        if (elem < b[i]) return Cmp.le;
+                        if (elem > b[i]) return Cmp.gt;
+                    }
+                    return Cmp.eq;
+                }
+            };
+        },
+        else => {
+            return struct {
+                fn cmp(a: A, b: A) Cmp {
+                    if (a < b) return Cmp.le;
+                    if (a > b) return Cmp.gt;
+                    return Cmp.eq;
+                }
+            };
+        },
+    }
+}
+
+fn makeRelation(comptime T: type, K: type, PK: type) type {
+    const keyinfo = @typeInfo(PK).Enum;
+    const typeinfo = @typeInfo(K).Struct;
+    return struct {
+        const Type = T;
+        pub const KeyType = K;
+        const PrimaryKey = PK;
+
+        pub fn key(record: *const Type) KeyType {
+            var result: KeyType = undefined;
+            inline for (keyinfo.fields, 0..) |field, i| {
+                result[i] = @field(record, field.name);
+            }
+            return result;
+        }
+
+        // fn compare(a: KeyType, b: KeyType) Cmp {
+        //     inline for (0..keys) |i| {
+        //         if (a[i] < b[i]) return Cmp.le;
+        //         if (a[i] > b[i]) return Cmp.gt;
+        //     }
+        //     return Cmp.eq;
+        // }
+
+        pub fn compareKey(k: KeyType, record: *const Type) Cmp {
+            inline for (keyinfo.fields, 0..) |field, i| {
+                const cmp = makeComparator(typeinfo.fields[i].type);
+                const result = cmp.cmp(k[i], @field(record, field.name));
+                if (result != Cmp.eq) return result;
+                // if (k[i] < @field(record, field.name)) return Cmp.le;
+                // if (k[i] > @field(record, field.name)) return Cmp.gt;
+            }
+            return Cmp.eq;
+        }
+    };
+}
 
 pub fn Rel(comptime T: type, PK: type) type {
     const keyinfo = @typeInfo(PK).Enum;
@@ -37,36 +107,7 @@ pub fn Rel(comptime T: type, PK: type) type {
             .is_tuple = true,
         },
     });
-
-    return struct {
-        const Type = T;
-        const KeyType = K;
-        const PrimaryKey = PK;
-
-        pub fn key(record: *const Type) KeyType {
-            var result: KeyType = undefined;
-            inline for (keyinfo.fields, 0..) |field, i| {
-                result[i] = @field(record, field.name);
-            }
-            return result;
-        }
-
-        // fn compare(a: KeyType, b: KeyType) Cmp {
-        //     inline for (0..keys) |i| {
-        //         if (a[i] < b[i]) return Cmp.le;
-        //         if (a[i] > b[i]) return Cmp.gt;
-        //     }
-        //     return Cmp.eq;
-        // }
-
-        pub fn compareKey(k: KeyType, record: *const Type) Cmp {
-            inline for (keyinfo.fields, 0..) |field, i| {
-                if (k[i] < @field(record, field.name)) return Cmp.le;
-                if (k[i] > @field(record, field.name)) return Cmp.gt;
-            }
-            return Cmp.eq;
-        }
-    };
+    return makeRelation(T, K, PK);
 }
 
 fn Comparator(comptime left: type, comptime right: type) type {
@@ -92,7 +133,7 @@ const Header = struct {
     underlying: Uuid,
 };
 
-pub fn Page(rel: type) type {
+fn Page(rel: type) type {
     const RecordSize = @sizeOf([1]rel.Type);
     const RecordsArea = PageSize - @sizeOf(Header);
     const Records = RecordsArea / RecordSize;
@@ -130,32 +171,16 @@ pub fn Page(rel: type) type {
             allocator.free(self);
         }
 
-        // fn binarySearch(self: *Self, key: rel.KeyType) isize {
-        //     var low: isize = 0;
-        //     var high: isize = @as(isize, @intCast(self.header.len)) - 1;
-        //     while (low <= high) {
-        //         const mid = @divTrunc(low + high, 2);
-        //         const record = &self.records[@intCast(mid)];
-        //         const cmp = rel.compareKey(key, record);
-        //         if (cmp == Cmp.gt) {
-        //             low = mid + 1;
-        //         } else if (cmp == Cmp.le) {
-        //             high = mid - 1;
-        //         } else return mid;
-        //     }
-        //     return -low - 1;
-        // }
-
         fn lowerBound(self: *Self, key: rel.KeyType) usize {
             var low: usize = 0;
             var high: usize = self.header.len;
             while (low < high) {
                 const mid = (low + high) >> 1;
                 const record = &self.records[mid];
-                const cmp = rel.compareKey(key, record);
-                if (cmp == Cmp.gt) {
-                    low = mid + 1;
-                } else high = mid;
+                if (rel.compareKey(key, record) == Cmp.gt)
+                    low = mid + 1
+                else
+                    high = mid;
             }
             return low;
         }
@@ -201,4 +226,52 @@ pub fn Page(rel: type) type {
             }
         }
     };
+}
+
+fn InnerRel(comptime K: type) type {
+    const keyinfo = @typeInfo(K).Struct;
+
+    const keys = keyinfo.fields.len;
+    var key_fields: [keys + 1]StructField = undefined;
+    var enum_fields: [keys]EnumField = undefined;
+
+    for (keyinfo.fields, 0..) |key, i| {
+        key_fields[i] = key;
+        // @compileLog(key);
+        enum_fields[i] = EnumField{
+            .name = key.name,
+            .value = i,
+        };
+    }
+    const name = &[1:0]u8{'0' + @as(u8, keys)};
+    key_fields[keys] = StructField{ .name = name, .type = Uuid, .default_value = null, .is_comptime = false, .alignment = 1 };
+
+    const S = @Type(.{
+        .Struct = .{
+            .layout = keyinfo.layout,
+            .fields = &key_fields,
+            .decls = keyinfo.decls,
+            .is_tuple = true,
+        },
+    });
+
+    const PK = @Type(.{
+        .Enum = .{
+            .tag_type = u8,
+            .fields = &enum_fields,
+            .decls = keyinfo.decls,
+            .is_exhaustive = false,
+        },
+    });
+
+    return makeRelation(S, K, PK);
+}
+
+pub fn LeafPage(comptime R: type) type {
+    return Page(R);
+}
+
+pub fn InnerPage(comptime K: type) type {
+    const KeyToUuid = InnerRel(K);
+    return Page(KeyToUuid);
 }

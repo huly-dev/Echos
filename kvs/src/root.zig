@@ -9,7 +9,7 @@ test "test create relation" {
     const S1 = struct { ax: u32, bx: i16, cx: u16, dx: i8 };
     const R1 = rel.Rel(S1, enum { ax, bx });
 
-    const R1Page = rel.Page(R1);
+    const R1Page = rel.LeafPage(R1);
 
     const pages = try testing.allocator.alloc(R1Page, 1);
     defer testing.allocator.free(pages);
@@ -41,4 +41,21 @@ test "test create relation" {
     try testing.expectEqual(null, page.get(.{ 5, 0 }));
 
     std.debug.print("{any}\n", .{pages[0]});
+}
+
+test "test inner page" {
+    const S1 = struct { ax: u32, bx: u16, cx: u16, dx: i8 };
+    const R1 = rel.Rel(S1, enum { ax, bx });
+
+    const InnerPage = rel.InnerPage(R1.KeyType);
+
+    const pages = try testing.allocator.alloc(InnerPage, 1);
+    defer testing.allocator.free(pages);
+
+    const page = &pages[0];
+    page.init(uuid.v4());
+
+    _ = page.upsert(&.{ 5, 16, [1]u8{77} ** 16 });
+
+    std.debug.print("{any}\n", .{page.get(.{ 5, 16 })});
 }
