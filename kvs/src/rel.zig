@@ -168,16 +168,14 @@ pub fn Page(rel: type) type {
                     return @intCast(ip);
                 }
             }
-            return -@as(isize, @intCast(ip)) - 1;
+            return ~@as(isize, @intCast(ip));
         }
 
         pub fn seek(self: *Self, key: rel.KeyType) Cursor {
-            const ip = self.binarySearch(key);
-            const cursor = Cursor{
+            return Cursor{
                 .records = &self.records,
-                .pos = if (ip < 0) @intCast(-ip - 1) else @intCast(ip),
+                .pos = self.lowerBound(key),
             };
-            return cursor;
         }
 
         pub fn get(self: *Self, key: rel.KeyType) ?*rel.Type {
@@ -191,16 +189,12 @@ pub fn Page(rel: type) type {
         pub fn upsert(self: *Self, kv: *const rel.Type) bool {
             const pos = self.binarySearch(rel.key(kv));
             if (pos >= 0) {
-                const ip: usize = @intCast(pos);
-                self.records[ip] = kv.*;
+                self.records[@intCast(pos)] = kv.*;
                 return true;
             } else {
-                const ip: usize = @intCast(-pos - 1);
-                const len = self.header.len;
-                var copy = len;
-                while (copy > ip) : (copy -= 1) {
-                    self.records[copy] = self.records[copy - 1];
-                }
+                const ip: usize = @intCast(~pos);
+                var copy = self.header.len;
+                while (copy > ip) : (copy -= 1) self.records[copy] = self.records[copy - 1];
                 self.records[ip] = kv.*;
                 self.header.len += 1;
                 return false;
