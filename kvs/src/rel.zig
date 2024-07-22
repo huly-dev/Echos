@@ -150,6 +150,14 @@ pub fn Page(rel: type) type {
             return cursor;
         }
 
+        pub fn get(self: *Self, key: rel.KeyType) ?*rel.Type {
+            const ip = self.binarySearch(key);
+            if (ip >= 0) {
+                return &self.records[@intCast(ip)];
+            }
+            return null;
+        }
+
         pub fn upsert(self: *Self, kv: *const rel.Type) bool {
             const pos = self.binarySearch(rel.key(kv));
             if (pos >= 0) {

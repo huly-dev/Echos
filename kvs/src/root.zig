@@ -16,9 +16,14 @@ test "test create relation" {
     const page = &pages[0];
     page.init(uuid.v4());
 
-    try testing.expectEqual(false, page.upsert(&S1{ .ax = 5, .bx = -7, .cx = 3, .dx = -5 }));
-    try testing.expectEqual(false, page.upsert(&S1{ .ax = 8, .bx = -345, .cx = 943, .dx = 2 }));
-    try testing.expectEqual(true, page.upsert(&S1{ .dx = 22, .ax = 5, .bx = -7, .cx = 111 }));
+    const v1 = &S1{ .ax = 5, .bx = -7, .cx = 3, .dx = -5 };
+    const v2 = &S1{ .ax = 8, .bx = -345, .cx = 943, .dx = 2 };
+    const v3 = &S1{ .ax = 5, .bx = -7, .cx = 111, .dx = 22 };
+
+    try testing.expectEqual(false, page.upsert(v1));
+    try testing.expectEqual(false, page.upsert(v2));
+    try testing.expectEqual(true, page.upsert(v3));
+    try testing.expectEqualDeep(v2, page.get(.{ 8, -345 }));
 
     // std.debug.print("{any}\n", .{pages[0]});
 }
