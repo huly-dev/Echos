@@ -13,7 +13,12 @@ fn comparator(comptime A: type) type {
     switch (@typeInfo(A)) {
         .Struct => {
             return struct {
-                fn cmp(_: A, _: A) Cmp {
+                fn cmp(a: A, b: A) Cmp {
+                    inline for (std.meta.fields(A)) |field| {
+                        const compare = comparator(field.type).cmp;
+                        const result = compare(@field(a, field.name), @field(b, field.name));
+                        if (result != Cmp.eq) return result;
+                    }
                     return Cmp.eq;
                 }
             };
@@ -41,71 +46,107 @@ fn comparator(comptime A: type) type {
     }
 }
 
-pub fn EnumFields(comptime T: type) type {
-    const typeinfo = @typeInfo(T).Struct;
-    var enum_fields: [typeinfo.fields.len]Type.EnumField = undefined;
+// fn Comparators(comptime fields: []Type.StructField) []type {
+//     comptime {
+//         var comparators: [fields.len]type = undefined;
+//         for (fields, 0..) |field, i| {
+//             comparators[i] = comparator(field.type);
+//         }
+//         return comparators;
+//     }
+// }
 
-    for (typeinfo.fields, 0..) |key, i| {
-        enum_fields[i] = Type.EnumField{
-            .name = key.name,
-            .value = i,
+fn CreateUniqueTuple(comptime N: comptime_int, comptime types: [N]type) type {
+    var tuple_fields: [types.len]Type.StructField = undefined;
+    inline for (types, 0..) |T, i| {
+        @setEvalBranchQuota(10_000);
+        var num_buf: [128]u8 = undefined;
+        tuple_fields[i] = .{
+            .name = std.fmt.bufPrintZ(&num_buf, "{d}", .{i}) catch unreachable,
+            .type = T,
+            .default_value = null,
+            .is_comptime = false,
+            .alignment = if (@sizeOf(T) > 0) @alignOf(T) else 0,
         };
     }
 
     return @Type(.{
-        .Enum = .{
-            .tag_type = u8,
-            .fields = &enum_fields,
-            .decls = typeinfo.decls,
-            .is_exhaustive = false,
+        .Struct = .{
+            .is_tuple = true,
+            .layout = .auto,
+            .decls = &.{},
+            .fields = &tuple_fields,
         },
     });
 }
 
-fn indexOf(comptime S: Type.Struct, comptime name: [:0]const u8) comptime_int {
-    for (S.fields, 0..) |f, i| {
-        if (std.mem.eql(u8, f.name, name))
-            return i;
-    }
-    @compileError("field not found: " ++ name);
+// pub fn EnumFields(comptime T: type) type {
+//     const fields = std.meta.fields(T);
+//     var enum_fields: [fields.len]Type.EnumField = undefined;
+
+//     for (fields, 0..) |key, i| {
+//         enum_fields[i] = Type.EnumField{
+//             .name = key.name,
+//             .value = i,
+//         };
+//     }
+
+//     return @Type(.{
+//         .Enum = .{
+//             .tag_type = u8,
+//             .fields = &enum_fields,
+//             .decls = &.{},
+//             .is_exhaustive = false,
+//         },
+//     });
+// }
+
+fn indexOf(comptime T: type, comptime name: [:0]const u8) comptime_int {
+    return for (std.meta.fields(T), 0..) |f, i| {
+        if (std.mem.eql(u8, f.name, name)) break i;
+    } else -1;
 }
 
 pub fn Key(comptime T: type, comptime E: type) type {
     // construct tuple with ordered key values
-    const typeinfo = @typeInfo(T).Struct;
-    const order = @typeInfo(E).Enum;
-    var tuple: [order.fields.len]Type.StructField = undefined;
+    const type_fields = std.meta.fields(T);
+    const order_fields = std.meta.fields(E);
+    // var tuple: [order_fields.len]Type.StructField = undefined;
+    var key_types: [order_fields.len]type = undefined;
 
-    for (order.fields, 0..) |key, i| {
-        tuple[i] = typeinfo.fields[comptime indexOf(typeinfo, key.name)];
-        tuple[i].name = comptime &[1:0]u8{'0' + @as(u8, i)};
+    for (order_fields, 0..) |key, i| {
+        // var num_buf: [128]u8 = undefined;
+        key_types[i] = type_fields[indexOf(T, key.name)].type;
+        // tuple[i] = type_fields[comptime indexOf(T, key.name)];
+        // tuple[i].name = std.fmt.bufPrintZ(&num_buf, "{d}", .{i}) catch unreachable;
     }
 
-    const K = @Type(.{
-        .Struct = .{
-            .layout = typeinfo.layout,
-            .fields = &tuple,
-            .decls = typeinfo.decls,
-            .is_tuple = true,
-        },
-    });
+    const K = CreateUniqueTuple(key_types.len, key_types);
+
+    // const K = @Type(.{
+    //     .Struct = .{
+    //         .layout = .auto,
+    //         .fields = &tuple,
+    //         .decls = &.{},
+    //         .is_tuple = true,
+    //     },
+    // });
 
     return struct {
         pub const Type = T;
         pub const Key = K;
-        pub const PK = E;
 
-        fn key(record: *const T) K {
+        pub fn key(record: *const T) K {
             var result: K = undefined;
-            inline for (order.fields, 0..) |f, i| {
+            inline for (order_fields, 0..) |f, i| {
                 result[i] = @field(record, f.name);
             }
             return result;
         }
 
-        fn compareKey(k: K, record: *const T) Cmp {
-            inline for (order.fields, 0..) |field, i| {
-                const cmp = comparator(typeinfo.fields[i].type).cmp;
+        pub fn compareKey(k: K, record: *const T) Cmp {
+            inline for (order_fields, 0..) |field, i| {
+                const cmp = comparator(type_fields[i].type).cmp;
                 const result = cmp(k[i], @field(record, field.name));
                 if (result != Cmp.eq) return result;
             }
@@ -117,42 +158,42 @@ pub fn Key(comptime T: type, comptime E: type) type {
 // K: Key, V: Value (tuple) -> tuple
 pub fn KeyValue(comptime K: type, comptime V: type) type {
     // construct tuple with ordered key values
-    const keyinfo = @typeInfo(K.Key).Struct;
-    const valinfo = @typeInfo(V).Struct;
-    var tuple: [keyinfo.fields.len + valinfo.fields.len]Type.StructField = undefined;
-    var pk: [keyinfo.fields.len]Type.EnumField = undefined;
+    const key_fields = std.meta.fields(K);
+    const val_fields = std.meta.fields(V);
 
-    for (keyinfo.fields, 0..) |key, i| {
+    var tuple: [key_fields.len + val_fields.len]Type.StructField = undefined;
+    var key_types: [key_fields.len]type = undefined;
+
+    for (key_fields, 0..) |key, i| {
         tuple[i] = key;
-        tuple[i].name = comptime &[1:0]u8{'0' + @as(u8, i)};
-        pk[i] = Type.EnumField{
-            .name = key.name,
-            .value = i,
-        };
+        key_types[i] = key.type;
     }
 
-    for (valinfo.fields, keyinfo.fields.len..) |val, i| {
+    for (val_fields, key_fields.len..) |val, i| {
+        var num_buf: [128]u8 = undefined;
         tuple[i] = val;
-        tuple[i].name = comptime &[1:0]u8{'0' + @as(u8, i)};
+        tuple[i].name = std.fmt.bufPrintZ(&num_buf, "{d}", .{i}) catch unreachable;
     }
 
     const KV = @Type(.{
         .Struct = .{
-            .layout = keyinfo.layout,
-            .fields = &tuple,
-            .decls = keyinfo.decls,
             .is_tuple = true,
+            .layout = .auto,
+            .fields = &tuple,
+            .decls = &.{},
         },
     });
 
-    const PK = @Type(.{
-        .Enum = .{
-            .tag_type = u8,
-            .fields = &pk,
-            .decls = keyinfo.decls,
-            .is_exhaustive = false,
-        },
-    });
+    const PK = CreateUniqueTuple(key_fields.len, key_types);
+
+    // const PK = @Type(.{
+    //     .Enum = .{
+    //         .tag_type = u8,
+    //         .fields = &pk,
+    //         .decls = keyinfo.decls,
+    //         .is_exhaustive = false,
+    //     },
+    // });
 
     return Key(KV, PK);
 }
@@ -204,7 +245,7 @@ pub fn Page(rel: type) type {
             allocator.free(self);
         }
 
-        fn lowerBound(self: *Self, key: rel.KeyType) usize {
+        fn lowerBound(self: *Self, key: rel.Key) usize {
             var low: usize = 0;
             var high: usize = self.header.len;
             while (low < high) {
@@ -218,7 +259,7 @@ pub fn Page(rel: type) type {
             return low;
         }
 
-        fn upperBound(self: *Self, key: rel.KeyType) usize {
+        fn upperBound(self: *Self, key: rel.Key) usize {
             var low: usize = 0;
             var high: usize = self.header.len;
             while (low < high) {
@@ -232,14 +273,14 @@ pub fn Page(rel: type) type {
             return low;
         }
 
-        pub fn seek(self: *Self, key: rel.KeyType) Cursor {
+        pub fn seek(self: *Self, key: rel.Key) Cursor {
             return Cursor{
                 .records = &self.records,
                 .pos = self.lowerBound(key),
             };
         }
 
-        pub fn get(self: *Self, key: rel.KeyType) ?*rel.Type {
+        pub fn get(self: *Self, key: rel.Key) ?*rel.Type {
             const pos = self.lowerBound(key);
             if (pos < self.header.len) {
                 const record = &self.records[pos];
@@ -269,45 +310,43 @@ pub fn Page(rel: type) type {
 }
 
 test "test create relation" {
-    // const u = Uuid.v4();
+    const testing = std.testing;
+
+    const u = Uuid.v4();
+    const v = Uuid.v4();
 
     const S = struct { ax: u32, bx: Uuid, cx: u16, dx: i8 };
 
-    const R1 = Key(S, enum { ax, bx });
-    const R2 = Key(S, enum { bx, ax });
+    const R = Key(S, enum { ax, bx });
+    const K = struct { u32, Uuid };
 
-    const R1Page = Page(R1);
+    const v1 = &S{ .ax = 5, .bx = u, .cx = 3, .dx = -5 };
+    const v2 = &S{ .ax = 8, .bx = v, .cx = 943, .dx = 2 };
+    const v3 = &S{ .ax = 5, .bx = v, .cx = 111, .dx = 22 };
+    const v4 = &S{ .ax = 3, .bx = u, .cx = 111, .dx = 22 };
 
-    const testing = std.testing;
-    const pages = try testing.allocator.alloc(R1Page, 1);
+    const k1 = K{ 5, u };
+    const k2 = K{ 8, v };
+    const k3 = K{ 5, v };
+    const k4 = K{ 3, u };
+
+    try testing.expectEqualDeep(k1, R.key(v1));
+    try testing.expectEqualDeep(k2, R.key(v2));
+    try testing.expectEqualDeep(k3, R.key(v3));
+    try testing.expectEqualDeep(k4, R.key(v4));
+
+    try testing.expectEqual(Cmp.eq, R.compareKey(k1, v1));
+    try testing.expectEqual(Cmp.le, R.compareKey(k1, v2));
+    try testing.expect(Cmp.eq != R.compareKey(k1, v3));
+    try testing.expectEqual(Cmp.gt, R.compareKey(k1, v4));
+
+    const RPage = Page(R);
+    const pages = try testing.allocator.alloc(RPage, 1);
     defer std.testing.allocator.free(pages);
 
-    const v1 = &S{ .ax = 5, .bx = Uuid.v4(), .cx = 3, .dx = -5 };
-    const v2 = &S{ .ax = 8, .bx = Uuid.v4(), .cx = 943, .dx = 2 };
-    const v3 = &S{ .ax = 5, .bx = Uuid.v4(), .cx = 111, .dx = 22 };
-    const v4 = &S{ .ax = 5, .bx = Uuid.v4(), .cx = 111, .dx = 22 };
-    _ = v1;
-    _ = v2;
-    _ = v3;
-    _ = v4;
+    const IR = KeyValue(R.Key, struct { Uuid });
 
-    // try testing.expectEqualDeep(.{ 5, -7 }, R1.key(v1));
-    // try testing.expectEqualDeep(.{ 8, -345 }, R1.key(v2));
-    // try testing.expectEqualDeep(.{ 5, -7 }, R1.key(v3));
-    // try testing.expectEqualDeep(.{ 5, 7 }, R1.key(v4));
+    const r = IR.Type{ 5, u, v };
 
-    // const m = struct { Uuid };
-    // const y = m{u};
-    // std.debug.print("{any}\n", .{y});
-
-    // const R1I = KeyValue(R1, m);
-    // // var z = [1]u8{0} ** 16;
-    // // z = uuid.v4();
-    // const x = R1I.Type{ 5, 5, u }; // [1]u8{0} ** 16 };
-
-    std.debug.print("{any}\n", .{R1});
-    std.debug.print("{any}\n", .{R2});
-
-    // std.debug.print("{any}\n", .{R1Page});
-    // std.debug.print("{any}\n", .{x});
+    std.debug.print("KK: {any}\n", .{r});
 }

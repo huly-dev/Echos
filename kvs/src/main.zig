@@ -1,6 +1,7 @@
 const std = @import("std");
 const rel = @import("rel.zig");
 const uuid = @import("uuid.zig");
+const Uuid = uuid.Uuid;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
@@ -15,7 +16,7 @@ pub fn main() !void {
     //
 
     const S1 = struct { ax: u32, bx: i16, cx: i16, dx: i8 };
-    const R1 = rel.Rel(S1, enum { ax, bx });
+    const R1 = rel.Key(S1, enum { ax, bx });
 
     const R1Page = rel.Page(R1);
 
@@ -23,7 +24,7 @@ pub fn main() !void {
     defer allocator.free(pages);
 
     const page = &pages[0];
-    page.init(uuid.v4());
+    page.init(Uuid.v4());
 
     //
 
