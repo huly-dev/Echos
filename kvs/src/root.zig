@@ -26,7 +26,7 @@ test "test create relation" {
     try testing.expectEqualDeep(.{ 5, 7 }, R1.key(v4));
 
     try testing.expectEqual(Cmp.eq, R1.compareKey(.{ 5, 7 }, v4));
-    try testing.expectEqual(Cmp.le, R1.compareKey(.{ 5, 7 }, v2));
+    try testing.expectEqual(Cmp.lt, R1.compareKey(.{ 5, 7 }, v2));
     try testing.expectEqual(Cmp.gt, R1.compareKey(.{ 5, 7 }, v1));
 
     const page = &pages[0];

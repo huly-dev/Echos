@@ -7,7 +7,7 @@ const Type = std.builtin.Type;
 const uuid = @import("./uuid.zig");
 const Uuid = uuid.Uuid;
 
-pub const Cmp = enum { eq, gt, le };
+pub const Cmp = enum { eq, gt, lt };
 
 fn comparator(comptime A: type) type {
     switch (@typeInfo(A)) {
@@ -27,7 +27,7 @@ fn comparator(comptime A: type) type {
             return struct {
                 fn cmp(a: A, b: A) Cmp {
                     for (a, 0..) |elem, i| {
-                        if (elem < b[i]) return Cmp.le;
+                        if (elem < b[i]) return Cmp.lt;
                         if (elem > b[i]) return Cmp.gt;
                     }
                     return Cmp.eq;
@@ -37,7 +37,7 @@ fn comparator(comptime A: type) type {
         else => {
             return struct {
                 fn cmp(a: A, b: A) Cmp {
-                    if (a < b) return Cmp.le;
+                    if (a < b) return Cmp.lt;
                     if (a > b) return Cmp.gt;
                     return Cmp.eq;
                 }
@@ -265,7 +265,7 @@ pub fn Page(rel: type) type {
             while (low < high) {
                 const mid = (low + high) >> 1;
                 const record = &self.records[mid];
-                if (rel.compareKey(key, record) == Cmp.le)
+                if (rel.compareKey(key, record) == Cmp.lt)
                     high = mid
                 else
                     low = mid + 1;
@@ -336,7 +336,7 @@ test "test create relation" {
     try testing.expectEqualDeep(k4, R.key(v4));
 
     try testing.expectEqual(Cmp.eq, R.compareKey(k1, v1));
-    try testing.expectEqual(Cmp.le, R.compareKey(k1, v2));
+    try testing.expectEqual(Cmp.lt, R.compareKey(k1, v2));
     try testing.expect(Cmp.eq != R.compareKey(k1, v3));
     try testing.expectEqual(Cmp.gt, R.compareKey(k1, v4));
 
