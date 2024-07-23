@@ -9,7 +9,7 @@ test "test create relation" {
     const S1 = struct { ax: u32, bx: i16, cx: u16, dx: i8 };
     const R1 = rel.Rel(S1, enum { ax, bx });
 
-    const R1Page = rel.LeafPage(R1);
+    const R1Page = rel.Page(R1);
 
     const pages = try testing.allocator.alloc(R1Page, 1);
     defer testing.allocator.free(pages);
@@ -47,15 +47,25 @@ test "test inner page" {
     const S1 = struct { ax: u32, bx: u16, cx: u16, dx: i8 };
     const R1 = rel.Rel(S1, enum { ax, bx });
 
-    const InnerPage = rel.InnerPage(R1.KeyType);
+    const K1toUuid = rel.InnerRel(R1.KeyType);
+    const K1toUuidPage = rel.Page(K1toUuid);
 
-    const pages = try testing.allocator.alloc(InnerPage, 1);
+    const pages = try testing.allocator.alloc(K1toUuidPage, 1);
     defer testing.allocator.free(pages);
 
     const page = &pages[0];
     page.init(uuid.v4());
 
-    _ = page.upsert(&.{ 5, 16, [1]u8{77} ** 16 });
+    // const x = uuid.v4();
+    const y = [1]u8{77} ** 16;
+    // y[5] = 55;
+    var z: u16 = 5;
+    z = 7;
 
-    std.debug.print("{any}\n", .{page.get(.{ 5, 16 })});
+    _ = page.upsert(&.{ 5, 7, y }); // works
+
+    const temp: K1toUuid.Type = .{ 5, z, y };
+    _ = page.upsert(&temp); // error
+
+    std.debug.print("{any}\n", .{page.get(.{ 5, 7 })});
 }

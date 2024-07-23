@@ -47,7 +47,7 @@ fn makeRelation(comptime T: type, K: type, PK: type) type {
     const keyinfo = @typeInfo(PK).Enum;
     const typeinfo = @typeInfo(K).Struct;
     return struct {
-        const Type = T;
+        pub const Type = T;
         pub const KeyType = K;
         const PrimaryKey = PK;
 
@@ -133,7 +133,7 @@ const Header = struct {
     underlying: Uuid,
 };
 
-fn Page(rel: type) type {
+pub fn Page(rel: type) type {
     const RecordSize = @sizeOf([1]rel.Type);
     const RecordsArea = PageSize - @sizeOf(Header);
     const Records = RecordsArea / RecordSize;
@@ -228,7 +228,7 @@ fn Page(rel: type) type {
     };
 }
 
-fn InnerRel(comptime K: type) type {
+pub fn InnerRel(comptime K: type) type {
     const keyinfo = @typeInfo(K).Struct;
 
     const keys = keyinfo.fields.len;
@@ -265,13 +265,4 @@ fn InnerRel(comptime K: type) type {
     });
 
     return makeRelation(S, K, PK);
-}
-
-pub fn LeafPage(comptime R: type) type {
-    return Page(R);
-}
-
-pub fn InnerPage(comptime K: type) type {
-    const KeyToUuid = InnerRel(K);
-    return Page(KeyToUuid);
 }
