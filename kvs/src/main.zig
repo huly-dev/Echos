@@ -17,7 +17,7 @@ pub fn main() !void {
     const S1 = struct { ax: u32, bx: i16, cx: i16, dx: i8 };
     const R1 = rel.Rel(S1, enum { ax, bx });
 
-    const R1Page = rel.LeafPage(R1);
+    const R1Page = rel.Page(R1);
 
     const pages = try allocator.alloc(R1Page, 1);
     defer allocator.free(pages);

@@ -185,15 +185,18 @@ pub fn Page(rel: type) type {
             return low;
         }
 
-        fn binarySearch(self: *Self, key: rel.KeyType) isize {
-            const ip = self.lowerBound(key);
-            if (ip < self.header.len) {
-                const record = &self.records[ip];
-                if (rel.compareKey(key, record) == Cmp.eq) {
-                    return @intCast(ip);
-                }
+        fn upperBound(self: *Self, key: rel.KeyType) usize {
+            var low: usize = 0;
+            var high: usize = self.header.len;
+            while (low < high) {
+                const mid = (low + high) >> 1;
+                const record = &self.records[mid];
+                if (rel.compareKey(key, record) == Cmp.le)
+                    high = mid
+                else
+                    low = mid + 1;
             }
-            return ~@as(isize, @intCast(ip));
+            return low;
         }
 
         pub fn seek(self: *Self, key: rel.KeyType) Cursor {
@@ -204,26 +207,30 @@ pub fn Page(rel: type) type {
         }
 
         pub fn get(self: *Self, key: rel.KeyType) ?*rel.Type {
-            const ip = self.binarySearch(key);
-            if (ip >= 0) {
-                return &self.records[@intCast(ip)];
+            const pos = self.lowerBound(key);
+            if (pos < self.header.len) {
+                const record = &self.records[pos];
+                if (rel.compareKey(key, record) == Cmp.eq)
+                    return record;
             }
             return null;
         }
 
         pub fn upsert(self: *Self, kv: *const rel.Type) bool {
-            const pos = self.binarySearch(rel.key(kv));
-            if (pos >= 0) {
-                self.records[@intCast(pos)] = kv.*;
-                return true;
-            } else {
-                const ip: usize = @intCast(~pos);
-                var copy = self.header.len;
-                while (copy > ip) : (copy -= 1) self.records[copy] = self.records[copy - 1];
-                self.records[ip] = kv.*;
-                self.header.len += 1;
-                return false;
+            const key = rel.key(kv);
+            const pos = self.lowerBound(key);
+            if (pos < self.header.len) {
+                const record = &self.records[pos];
+                if (rel.compareKey(key, record) == Cmp.eq) {
+                    self.records[@intCast(pos)] = kv.*;
+                    return true;
+                }
             }
+            var copy = self.header.len;
+            while (copy > pos) : (copy -= 1) self.records[copy] = self.records[copy - 1];
+            self.records[pos] = kv.*;
+            self.header.len += 1;
+            return false;
         }
     };
 }
