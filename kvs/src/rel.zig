@@ -199,12 +199,13 @@ pub fn KeyValue(comptime K: type, comptime V: type) type {
 }
 
 const PageSize = 4096;
+const HashSize = 32;
 
 const Header = struct {
-    len: u32,
-    record_size: u32,
-    reserved: u64,
-    underlying: Uuid,
+    len: u16,
+    record_size: u16,
+    reserved: u32,
+    hash: [HashSize]u8,
 };
 
 pub fn Page(rel: type) type {
@@ -234,15 +235,11 @@ pub fn Page(rel: type) type {
             }
         };
 
-        pub fn init(self: *Self, underlying: Uuid) void {
+        pub fn init(self: *Self, underlying: [HashSize]u8) void {
             self.header.len = 0;
             self.header.record_size = RecordSize;
             self.header.reserved = 0;
-            self.header.underlying = underlying;
-        }
-
-        fn deinit(self: *Self, allocator: Allocator) void {
-            allocator.free(self);
+            self.header.hash = underlying;
         }
 
         fn lowerBound(self: *Self, key: rel.Key) usize {
@@ -308,6 +305,15 @@ pub fn Page(rel: type) type {
         }
     };
 }
+
+// pub fn Rel(comptime K: type, comptime PK: type) type {
+//     const KeyType = Key(K, PK);
+//     const LeafPage = Page(KeyType);
+//     const Key2Uuid = KeyValue(KeyType, struct { Uuid });
+//     const InnerPage = Page(Key2Uuid);
+
+//     return struct {};
+// }
 
 test "test create relation" {
     const testing = std.testing;
