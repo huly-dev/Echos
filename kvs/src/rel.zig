@@ -3,6 +3,8 @@
 const std = @import("std");
 const ulid = @import("./ulid.zig");
 
+const assert = std.debug.assert;
+
 const DbValueType = enum(u8) {
     dbulid,
     dbsymbol,
@@ -10,6 +12,7 @@ const DbValueType = enum(u8) {
     dbu32,
     dbu16,
     dbu8,
+    dbvoid,
 };
 
 const DbValue = union(DbValueType) {
@@ -19,6 +22,7 @@ const DbValue = union(DbValueType) {
     dbu32: u32,
     dbu16: u16,
     dbu8: u8,
+    dbvoid: void,
 
     fn write(value: DbValue, buf: []u8) usize {
         switch (value) {
@@ -28,7 +32,14 @@ const DbValue = union(DbValueType) {
                 std.mem.writeInt(T, buf[0..size], v, .big);
                 return size;
             },
-            else => unreachable,
+            .dbulid => |v| return v.write(buf),
+            .dbsymbol => |v| {
+                assert(v.len < 256);
+                buf[0] = @as(u8, @intCast(v.len));
+                @memcpy(buf[1 .. v.len + 1], v);
+                return v.len + 1;
+            },
+            .dbvoid => return 0,
         }
     }
 };
@@ -42,7 +53,7 @@ const EphemeralId = struct { id: u32 };
 
 // const db_types = [_]db_type{ db_type(u64), db_type(u32), db_type(u16), db_type(u8) };
 
-// const PageSize = 4096;
+const PageSize = 4096;
 
 const HashSize = 32;
 const Hash = [HashSize]u8;
@@ -66,8 +77,8 @@ pub const Db = struct {
     values: [PageSize]u8,
     last_value: usize,
 
-    fn init(allocator: std.mem.Allocator, sources: []Hash) !*Db {
-        const source_list = try std.ArrayListUnmanaged(Hash).initCapacity(allocator, @max(sources.len, 2));
+    fn init(allocator: std.mem.Allocator, sources: []const Hash) !*Db {
+        var source_list = try std.ArrayListUnmanaged(Hash).initCapacity(allocator, @max(sources.len, 2));
         try source_list.appendSlice(allocator, sources);
         var tx = Db{
             .allocator = allocator,
@@ -105,9 +116,9 @@ test "test" {
     const s = DbValue.write(x, &buf);
     std.debug.print("{any} {d}\n", .{ buf, s });
 
-    const db = try Db.init(std.testing.allocator);
+    const db = try Db.init(std.testing.allocator, &[0]Hash{});
     defer db.deinit();
 
     try db.insert(EphemeralId{ .id = 1 }, EphemeralId{ .id = 2 }, x);
-    std.debug.print("{any}\n", .{tx});
+    std.debug.print("{any}\n", .{db});
 }
