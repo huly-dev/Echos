@@ -10,58 +10,56 @@ const Ulid = ulid.Ulid;
 
 // D A T A B A S E  T Y P E S
 
-const DbValueType = enum(u8) {
-    dbsymbol,
+const DbValueType = u4;
+
+const DbValueKind = enum(DbValueType) {
     dbid,
-    dbu64,
-    dbu32,
-    dbu16,
-    dbu8,
-    dbvoid,
+    dbuuid,
+    dbkeyword,
+    dbuint,
     dbchar,
+    dbdatetime,
 };
 
-const EphemeralId = struct { id: usize };
+const EphemeralId = struct { id: usize }; // u32
+const Uuid = [16]u8;
 
-const DbValue = union(DbValueType) {
-    dbsymbol: *const Ulid,
+const DbValue = union(DbValueKind) {
     dbid: EphemeralId, // this is ephemeral id pointing to symbol
-    dbu64: u64,
-    dbu32: u32,
-    dbu16: u16,
-    dbu8: u8,
-    dbvoid: void,
+    dbuuid: *const Uuid,
+    dbkeyword: []const u8,
+    dbuint: usize,
     dbchar: []const u8,
+    dbdatetime: u32,
 };
 
 // D A T A B A S E  P A G E S
 
 const PageSize = 4096;
-const HashSize = 32;
-const Hash = [HashSize]u8;
+const Hash256 = [32]u8;
 
-const WorkspaceGenesis = struct {
-    workspace: Ulid,
-    owner: Ulid,
-};
+// const WorkspaceGenesis = struct {
+//     workspace: Ulid,
+//     owner: Ulid,
+// };
 
-const PageHeader = struct {
-    signature: Hash, // 32 bytes
-    author: Hash, // 32 bytes
-    prev: union { page: Hash, genesis: WorkspaceGenesis }, // 32 bytes, height == 0 -> workspace, height > 0 -> prev
-    height: u32, // 4 bytes
-    symbols: u32, // 4 bytes
-};
+// const PageHeader = struct {
+//     signature: Hash256,
+//     account: EphemeralId, // in person database
+//     prev: Id,
+//     height: usize,
+//     symbols: usize,
+// };
 
-const PageType = enum(u8) {
-    tuples,
-    merge,
-};
+// const PageType = enum(u8) {
+//     tuples,
+//     merge,
+// };
 
-const Page = struct { header: PageHeader, data: union(PageType) {
-    tuples: void,
-    merge: void,
-} };
+// const Page = struct { header: PageHeader, data: union(PageType) {
+//     tuples: void,
+//     merge: void,
+// } };
 
 const symbol_db_symbol = Ulid{ .bytes = [16]u8{ 1, 144, 237, 102, 185, 237, 123, 44, 199, 209, 139, 129, 121, 70, 59, 59 } };
 const symbol_db_type = Ulid{ .bytes = [16]u8{ 1, 144, 237, 89, 186, 123, 15, 113, 198, 10, 84, 52, 8, 223, 230, 126 } };
@@ -73,11 +71,72 @@ const symbol_db_cardinalty_many = Ulid{ .bytes = [16]u8{ 1, 144, 237, 145, 253, 
 
 const db_symbol = EphemeralId{ .id = 1 };
 
+// T U P L E S
+
+const PValueState = enum(u2) {
+    normal,
+    deleted,
+    entity,
+    embedded,
+};
+
+const PValue16 = packed struct {
+    state: PValueState,
+    value: packed union {
+        normal: packed struct { value_type: u4, payload: u10 },
+        deleted: void,
+        entity: u14,
+    },
+};
+
+const PValue24 = packed struct {
+    state: PValueState,
+    value: packed union {
+        normal: packed struct { value_type: u4, payload: u18 },
+        deleted: void,
+        entity: u22,
+    },
+};
+
+const PValue32 = packed struct {
+    state: PValueState,
+    value: packed union {
+        normal: packed struct { value_type: u4, payload: u26 },
+        deleted: void,
+        entity: u30,
+    },
+};
+
+const PValueType = enum { pv16, pv24, pv32 };
+
 const Tuple = struct {
     e: EphemeralId,
     a: EphemeralId,
     v: DbValue,
 };
+
+const Writer = struct {
+    var tuples: []PValue32 = undefined;
+
+    fn init(buf: [*]u8) Writer {
+        return Writer{ .tuples = @ptrCast(buf) };
+    }
+
+    fn write(self: *Writer, tuple: Tuple) usize {
+        const t = PValue32{
+            .state = PValueState.normal,
+            .value = PValue32Value.normal{
+                .value_type = 0,
+                .payload = 0,
+            },
+        };
+    }
+};
+
+fn valueWriter(max_symbol: usize, max_offset: usize) Writer {
+    var buf: [PageSize]u8 = undefined;
+    return Writer.init(buf[0..]);
+}
 
 const Tuples = struct {
     start_id: usize,
