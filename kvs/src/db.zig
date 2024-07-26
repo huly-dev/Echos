@@ -63,9 +63,13 @@ const Page = struct { header: PageHeader, data: union(PageType) {
     merge: void,
 } };
 
-// const symbol_db_null = [16]u8{ 1, 144, 237, 89, 186, 123, 15, 113, 198, 10, 84, 52, 8, 223, 230, 126 };
 const symbol_db_symbol = Ulid{ .bytes = [16]u8{ 1, 144, 237, 102, 185, 237, 123, 44, 199, 209, 139, 129, 121, 70, 59, 59 } };
-const symbol_db_attribute = Ulid{ .bytes = [16]u8{ 1, 144, 237, 92, 235, 182, 248, 226, 248, 193, 64, 30, 228, 94, 52, 132 } };
+const symbol_db_type = Ulid{ .bytes = [16]u8{ 1, 144, 237, 89, 186, 123, 15, 113, 198, 10, 84, 52, 8, 223, 230, 126 } };
+const symbol_db_type_symbol = Ulid{ .bytes = [16]u8{ 1, 144, 237, 150, 50, 202, 221, 224, 43, 81, 143, 241, 2, 125, 74, 248 } };
+const symbol_db_type_ref = Ulid{ .bytes = [16]u8{ 1, 144, 237, 131, 190, 90, 7, 157, 125, 11, 197, 175, 52, 221, 119, 243 } };
+const symbol_db_cardinalty = Ulid{ .bytes = [16]u8{ 1, 144, 237, 92, 235, 182, 248, 226, 248, 193, 64, 30, 228, 94, 52, 132 } };
+const symbol_db_cardinalty_one = Ulid{ .bytes = [16]u8{ 1, 144, 237, 145, 253, 187, 153, 161, 204, 248, 168, 50, 171, 189, 46, 222 } };
+const symbol_db_cardinalty_many = Ulid{ .bytes = [16]u8{ 1, 144, 237, 145, 253, 187, 153, 161, 204, 248, 168, 50, 171, 189, 46, 223 } };
 
 const db_symbol = EphemeralId{ .id = 1 };
 
@@ -119,13 +123,32 @@ fn genesis(workspace: Ulid, owner: Ulid) Page {
     var tuples = Tuples.init(1);
     const id = tuples.addSymbol(symbol_db_symbol);
     assert(id.id == db_symbol.id);
-    // const db_attribute = tuples.addSymbol(symbol_db_attribute);
+
+    const db_type = tuples.addSymbol(symbol_db_type);
+    const db_type_symbol = tuples.addSymbol(symbol_db_type_symbol);
+    const db_type_ref = tuples.addSymbol(symbol_db_type_ref);
+
+    const db_cardinality = tuples.addSymbol(symbol_db_cardinalty);
+    const db_cardinality_one = tuples.addSymbol(symbol_db_cardinalty_one);
+    const db_cardinality_many = tuples.addSymbol(symbol_db_cardinalty_many);
+    _ = db_cardinality_many;
+
+    tuples.insert(db_symbol, db_type, DbValue{ .dbid = db_type_symbol });
+    tuples.insert(db_symbol, db_cardinality, DbValue{ .dbid = db_cardinality_one });
+
+    tuples.insert(db_type, db_type, DbValue{ .dbid = db_type_ref });
+    tuples.insert(db_type, db_cardinality, DbValue{ .dbid = db_cardinality_one });
+
+    tuples.insert(db_cardinality, db_type, DbValue{ .dbid = db_type_ref });
+    tuples.insert(db_cardinality, db_cardinality, DbValue{ .dbid = db_cardinality_one });
+
+    std.debug.print("tuples: {any}\n", .{tuples});
 
     const page = Page{
         .header = .{
             .signature = undefined,
             .author = undefined,
-            .prev = .{ .genesis = .{ .workspace = workspace, .owner = owner } }, //++ workspace.bytes,
+            .prev = .{ .genesis = .{ .workspace = workspace, .owner = owner } },
             .height = 0,
             .symbols = 0,
         },
