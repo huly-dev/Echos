@@ -48,4 +48,6 @@ test "create ulid" {
     const y = gen.next();
     try std.testing.expectEqual(false, std.mem.eql(u8, &x.bytes, &y.bytes));
     try std.testing.expectEqual(.lt, std.mem.order(u8, &x.bytes, &y.bytes));
+
+    std.debug.print("x: {any}", .{x});
 }
