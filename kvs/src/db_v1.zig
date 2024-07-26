@@ -79,12 +79,12 @@ const PageHeader = struct {
     author: Hash, // 32 bytes
     workspace: union { prev: Hash, workspace: Ulid }, // 32 bytes
     height: u32, // 4 bytes
+    symbols: u32, // 4 bytes
     tx_type: TxType, // 1 byte
 };
 
 const TxData = struct {
     tuples: u16, // 2 bytes
-    symbols: u32, // symbols in the workspace
     ephemerals: u8, // 1 byte, new symbols in this transaction
     encryption: Encryption, // 1 byte
 };
